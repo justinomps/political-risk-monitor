@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block title %}Event Details - Political Risk Monitor{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/custom-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="col-12 mt-4">
+    <div class="mb-3">
+        <a href="{{ url_for('events') }}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Back to Events
+        </a>
+    </div>
+    
+    <div class="row">
+        <!-- Event Details -->
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header bg-{{ event.severity }}">
+                    <h4 class="card-title mb-0">
+                        <span class="status-indicator bg-{{ event.severity }} me-2"></span>
+                        {{ event.title }}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h5>Event Details</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Category:</strong> {{ categories[event.category].name }}</p>
+                                <p>
+                                    <strong>Severity:</strong> 
+                                    <span class="text-{{ event.severity }} text-capitalize">{{ event.severity }}</span>
+                                </p>
+                                <p><strong>Source:</strong> {{ event.source }}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Detected Date:</strong> {{ event.detected_date|datetime }}</p>
+                                <p><strong>Published Date:</strong> {{ event.published_date|datetime }}</p>
+                                <p><strong>Analysis Method:</strong> {{ ", ".join(event.methods) }}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Objective Score Display -->
+                        {% if event.score %}
+                        <div class="mt-3">
+                            <h6>Objective Risk Score: {{ event.score }}/100</h6>
+                            <div id="scoreVisual" data-score="{{ event.score }}"></div>
+                            <div class="d-flex justify-content-between mt-1">
+                                <small class="text-success">Low Risk (0-25)</small>
+                                <small class="text-warning">Warning (26-50)</small>
+                                <small id="concernText">Concern (51-75)</small>
+                                <small class="text-danger">Critical (76-100)</small>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Multi-Perspective Analysis -->
+                    {% if event.perspective_explanations %}
+                    <div class="mb-4">
+                        <h5>Multi-Perspective Analysis</h5>
+                        <p class="text-muted small">Analysis from different perspectives helps control for bias</p>
+                        
+                        {% if event.perspective_explanations.neutral %}
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6>Neutral Analyst Perspective</h6>
+                                <p class="mb-0">{{ event.perspective_explanations.neutral }}</p>
+                                {% if event.perspective_scores and event.perspective_scores.neutral %}
+                                <div class="mt-2">
+                                    <small class="text-muted">Score: {{ event.perspective_scores.neutral }}/100</small>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        {% if event.perspective_explanations.conservative %}
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6>Conservative Perspective</h6>
+                                <p class="mb-0">{{ event.perspective_explanations.conservative }}</p>
+                                {% if event.perspective_scores and event.perspective_scores.conservative %}
+                                <div class="mt-2">
+                                    <small class="text-muted">Score: {{ event.perspective_scores.conservative }}/100</small>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        {% if event.perspective_explanations.progressive %}
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6>Progressive Perspective</h6>
+                                <p class="mb-0">{{ event.perspective_explanations.progressive }}</p>
+                                {% if event.perspective_scores and event.perspective_scores.progressive %}
+                                <div class="mt-2">
+                                    <small class="text-muted">Score: {{ event.perspective_scores.progressive }}/100</small>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Overall Assessment -->
+                    {% if event.overall_assessment %}
+                    <div class="mb-3">
+                        <h5>Consolidated Assessment</h5>
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                {{ event.overall_assessment|safe }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Original Article -->
+                    {% if article %}
+                    <div>
+                        <h5>Original Article</h5>
+                        <div class="card">
+                            <div class="card-body">
+                                <h6>{{ article.title }}</h6>
+                                <p class="text-muted">
+                                    <small>{{ article.source }} - {{ article.published_date|datetime }}</small>
+                                </p>
+                                <div class="article-content">
+                                    {{ article.content|safe }}
+                                </div>
+                                <div class="mt-3">
+                                    <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-external-link-alt me-1"></i> View Original
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Category Information -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Category Information</h5>
+                </div>
+                <div class="card-body">
+                    <h6>{{ categories[event.category].name }}</h6>
+                    <p>{{ categories[event.category].description }}</p>
+                    
+                    <h6 class="mt-3">Severity Levels:</h6>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item">
+                            <span class="status-indicator bg-yellow me-2"></span>
+                            <strong>Yellow (Score 26-50):</strong> Early warning signs
+                        </li>
+                        <li class="list-group-item">
+                            <span class="status-indicator bg-orange me-2"></span>
+                            <strong>Orange (Score 51-75):</strong> Significant concerns
+                        </li>
+                        <li class="list-group-item">
+                            <span class="status-indicator bg-red me-2"></span>
+                            <strong>Red (Score 76-100):</strong> Critical threat
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Related Events</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Related events will be displayed here in a future update.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Style the concern text with orange color
+        const concernText = document.getElementById('concernText');
+        if (concernText) {
+            concernText.style.color = '#fd7e14';
+        }
+        
+        // Create the score visualization 
+        const scoreVisual = document.getElementById('scoreVisual');
+        if (scoreVisual) {
+            const score = parseInt(scoreVisual.getAttribute('data-score'));
+            
+            // Create the score bar
+            const scoreBar = document.createElement('div');
+            scoreBar.style.height = '8px';
+            scoreBar.style.borderRadius = '4px';
+            scoreBar.style.backgroundColor = '#e9ecef';
+            scoreBar.style.marginTop = '8px';
+            scoreBar.style.overflow = 'hidden';
+            
+            // Create the fill
+            const scoreFill = document.createElement('div');
+            scoreFill.style.height = '100%';
+            scoreFill.style.width = '100%';
+            scoreFill.style.background = 'linear-gradient(to right, #28a745, #ffc107, #fd7e14, #dc3545)';
+            
+            // Add the fill to the bar
+            scoreBar.appendChild(scoreFill);
+            
+            // Create the marker
+            const marker = document.createElement('div');
+            marker.style.position = 'relative';
+            marker.style.width = '12px';
+            marker.style.height = '12px';
+            marker.style.backgroundColor = '#343a40';
+            marker.style.borderRadius = '50%';
+            marker.style.top = '-10px';
+            marker.style.marginLeft = '-6px';
+            marker.style.left = score + '%';
+            
+            // Add elements to the score visual
+            scoreVisual.appendChild(scoreBar);
+            scoreVisual.appendChild(marker);
+            
+            // Style the perspective cards
+            const neutralCards = document.querySelectorAll('.perspective-neutral');
+            neutralCards.forEach(card => {
+                card.style.borderLeft = '5px solid #17a2b8';
+            });
+            
+            const conservativeCards = document.querySelectorAll('.perspective-conservative');
+            conservativeCards.forEach(card => {
+                card.style.borderLeft = '5px solid #007bff';
+            });
+            
+            const progressiveCards = document.querySelectorAll('.perspective-progressive');
+            progressiveCards.forEach(card => {
+                card.style.borderLeft = '5px solid #6f42c1';
+            });
+        }
+    });
+</script>
+{% endblock %}

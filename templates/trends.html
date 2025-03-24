@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Trend Analysis - Political Risk Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Status colors */
+    .bg-orange { background-color: #fd7e14; }
+    .text-orange { color: #fd7e14; }
+    
+    /* Simple styling */
+    .trend-improving { color: #28a745; }
+    .trend-stable { color: #6c757d; }
+    .trend-deteriorating { color: #ffc107; }
+    .trend-rapidly-deteriorating { color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="col-12 mt-4">
+    <h2 class="mb-4">Trend Analysis</h2>
+    
+    <!-- Alert Level Information -->
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Current Alert Level</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-{{ 'success' if current_alert_level == 1 else 'warning' if current_alert_level == 2 else 'orange' if current_alert_level == 3 else 'danger' if current_alert_level >= 4 else 'info' }}">
+                        <h4 class="alert-heading">Level {{ current_alert_level }}</h4>
+                        <p>
+                            {% if current_alert_level == 1 %}
+                            Normal Monitoring
+                            {% elif current_alert_level == 2 %}
+                            Preparation Stage
+                            {% elif current_alert_level == 3 %}
+                            Active Planning
+                            {% elif current_alert_level == 4 %}
+                            Readiness Stage
+                            {% elif current_alert_level == 5 %}
+                            Immediate Action
+                            {% endif %}
+                        </p>
+                        <hr>
+                        <p class="mb-0">Days at current level: <strong>{{ alert_statistics.consecutive_days }}</strong></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Alert Level Recommendation</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Recommended Actions:</strong></p>
+                    <p>
+                        {% if current_alert_level == 1 %}
+                        Continue normal monitoring of political developments.
+                        {% elif current_alert_level == 2 %}
+                        Review financial portability, organize documents, research exit options.
+                        {% elif current_alert_level == 3 %}
+                        Transfer some assets abroad, obtain second residency options, prepare property for potential sale.
+                        {% elif current_alert_level == 4 %}
+                        Move liquid assets offshore, send family members ahead for 'extended visits,' prepare property for immediate sale.
+                        {% elif current_alert_level == 5 %}
+                        Execute departure plan immediately, activate emergency protocols.
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Category Trend Summary -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Category Trends</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Current Status</th>
+                                    <th>Trend</th>
+                                    <th>Days at Level</th>
+                                    <th>Confirmed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cat_id, trend_data in category_trends.items() %}
+                                <tr>
+                                    <td>{{ categories[cat_id].name }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ trend_data.current_status }}">{{ trend_data.current_status|capitalize }}</span>
+                                    </td>
+                                    <td>
+                                        {% if trend_data.trend == 'improving' %}
+                                        <span class="trend-improving">
+                                            <i class="fas fa-arrow-down"></i> Improving
+                                        </span>
+                                        {% elif trend_data.trend == 'stable' %}
+                                        <span class="trend-stable">
+                                            <i class="fas fa-arrow-right"></i> Stable
+                                        </span>
+                                        {% elif trend_data.trend == 'deteriorating' %}
+                                        <span class="trend-deteriorating">
+                                            <i class="fas fa-arrow-up"></i> Deteriorating
+                                        </span>
+                                        {% elif trend_data.trend == 'rapidly_deteriorating' %}
+                                        <span class="trend-rapidly-deteriorating">
+                                            <i class="fas fa-arrow-up"></i> Rapidly Deteriorating
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ trend_data.days_at_current_level }}</td>
+                                    <td>
+                                        {% if trend_data.current_status != 'green' %}
+                                        {% if trend_data.confirmed %}
+                                        <i class="fas fa-check text-success"></i> Confirmed
+                                        {% else %}
+                                        <i class="fas fa-clock text-warning"></i> Waiting
+                                        {% endif %}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">Yellow indicators require 30 days, orange 14 days, and red are confirmed immediately</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Persistence & Confirmation -->
+    <div class="row">
+        <!-- Confirmed Indicators Summary -->
+        <div class="col-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Confirmed Indicators</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <div class="card text-center">
+                                <div class="card-header bg-warning text-dark">Yellow</div>
+                                <div class="card-body">
+                                    <h3>{{ confirmed_counts.yellow }}</h3>
+                                    <p>Confirmed yellow indicators</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card text-center">
+                                <div class="card-header bg-orange text-white">Orange</div>
+                                <div class="card-body">
+                                    <h3>{{ confirmed_counts.orange }}</h3>
+                                    <p>Confirmed orange indicators</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card text-center">
+                                <div class="card-header bg-danger text-white">Red</div>
+                                <div class="card-body">
+                                    <h3>{{ confirmed_counts.red }}</h3>
+                                    <p>Confirmed red indicators</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <h6>Confirmed Categories</h6>
+                            <ul class="list-group">
+                                {% for cat_id, trend_data in category_trends.items() %}
+                                {% if trend_data.current_status != 'green' and trend_data.confirmed %}
+                                <li class="list-group-item">
+                                    <span class="badge bg-{{ trend_data.current_status }} me-2">{{ trend_data.current_status|capitalize }}</span>
+                                    {{ categories[cat_id].name }}
+                                </li>
+                                {% endif %}
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <h6>Persistence Rules</h6>
+                            <ul class="list-group">
+                                <li class="list-group-item list-group-item-warning">
+                                    Yellow indicators: 30 days to confirm
+                                </li>
+                                <li class="list-group-item" style="background-color: #fd7e14; color: white;">
+                                    Orange indicators: 14 days to confirm
+                                </li>
+                                <li class="list-group-item list-group-item-danger">
+                                    Red indicators: Confirmed immediately
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    {% if accelerating_categories %}
+                    <div class="mt-4">
+                        <h6>Rapidly Accelerating Categories</h6>
+                        <div class="alert alert-danger">
+                            <ul class="mb-0">
+                                {% for cat in accelerating_categories %}
+                                <li>{{ cat.name }} ({{ cat.current_status|capitalize }})</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Political Risk Monitor{% endblock %}
+
+{% block extra_css %}
+<style>
+    .alert-orange {
+        background-color: #fd7e14;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="col-12">
+    <!-- Hidden data elements for JavaScript -->
+    <div id="dashboard-data" 
+         data-status="{{ summary.overall_status }}"
+         data-orange-count="{{ summary.categories.values()|selectattr('current_severity', 'equalto', 'orange')|list|length }}"
+         data-orange-threshold="{{ summary.thresholds.orange_threshold }}"
+         data-orange-crossed="{{ summary.thresholds.orange_threshold_crossed|lower }}"
+         data-red-count="{{ summary.categories.values()|selectattr('current_severity', 'equalto', 'red')|list|length }}"
+         data-red-threshold="{{ summary.thresholds.red_threshold }}"
+         data-red-crossed="{{ summary.thresholds.red_threshold_crossed|lower }}"
+         style="display: none;">
+    </div>
+
+    <div class="row mt-4">
+        <!-- Status Overview -->
+        <div class="col-md-6 col-lg-3 mb-4">
+            <div class="card h-100">
+                <div id="status-header" class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-tachometer-alt me-2"></i>Current Status
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-column align-items-center">
+                        <div id="main-status-indicator" class="status-indicator mb-3" style="width: 80px; height: 80px;"></div>
+                        <h2 id="status-text" class="mb-0 text-capitalize">{{ summary.overall_status }}</h2>
+                        <p class="text-muted mt-2">Last updated: {{ summary.date|datetime }}</p>
+                        
+                        <div class="mt-3">
+                            <span class="badge bg-yellow me-1">{{ summary.yellow_count }}</span> Yellow
+                            <span class="badge bg-orange mx-1">{{ summary.orange_count }}</span> Orange
+                            <span class="badge bg-red ms-1">{{ summary.red_count }}</span> Red
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">
+                        {% if summary.overall_status == 'green' %}
+                        No concerning indicators detected
+                        {% elif summary.overall_status == 'yellow' %}
+                        Early warning signs detected
+                        {% elif summary.overall_status == 'orange' %}
+                        Significant concerns, prepare for action
+                        {% elif summary.overall_status == 'red' %}
+                        Critical threat - Action recommended
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Alert Level -->
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Alert Level
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-column align-items-center">
+                        <!-- This div will have a different color based on alert level -->
+                        <div id="alert-level-indicator" class="alert alert-{{ 'success' if summary.alert_level == 1 else 'warning' if summary.alert_level == 2 else 'orange' if summary.alert_level == 3 else 'danger' if summary.alert_level >= 4 else 'info' }} w-100 text-center">
+                            <h3 class="mb-0">Level {{ summary.alert_level }}</h3>
+                            <p class="mb-0">
+                                {% if summary.alert_level == 1 %}
+                                Normal Monitoring
+                                {% elif summary.alert_level == 2 %}
+                                Preparation Stage
+                                {% elif summary.alert_level == 3 %}
+                                Active Planning
+                                {% elif summary.alert_level == 4 %}
+                                Readiness Stage
+                                {% elif summary.alert_level == 5 %}
+                                Immediate Action
+                                {% endif %}
+                            </p>
+                        </div>
+                        
+                        <!-- Recommendations -->
+                        <div class="mt-3">
+                            <h6>Recommended Actions:</h6>
+                            <p>{{ summary.alert_recommendations }}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">
+                        Based on confirmed indicators and acceleration patterns
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Categories Overview -->
+        <div class="col-md-6 col-lg-5 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-list-ul me-2"></i>Category Status
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-center">Duration</th>
+                                    <th class="text-center">Confirmed</th>
+                                    <th class="text-end">Events</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for cat_id, cat_data in summary.categories.items() %}
+                                <tr class="category-row" data-severity="{{ cat_data.current_severity }}">
+                                    <td>{{ categories[cat_id].name }}</td>
+                                    <td class="text-center">
+                                        <span class="status-indicator"></span>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if cat_data.current_severity != 'green' %}
+                                        {{ cat_data.duration_days|default(0) }} days
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if cat_data.current_severity != 'green' %}
+                                        {% if cat_data.confirmed %}
+                                        <i class="fas fa-check text-success"></i>
+                                        {% else %}
+                                        <i class="fas fa-clock text-warning"></i>
+                                        {% endif %}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% set total = cat_data.yellow + cat_data.orange + cat_data.red %}
+                                        {% if total > 0 %}
+                                        <a href="/events?category={{ cat_id }}">{{ total }}</a>
+                                        {% else %}
+                                        0
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Thresholds Status -->
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Threshold Status
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h6>Orange Threshold (3 categories)</h6>
+                        <div class="progress">
+                            <div id="orange-progress" class="progress-bar bg-orange" role="progressbar" style="width: 0%"
+                                aria-valuenow="0" aria-valuemin="0" aria-valuemax="3">
+                                0/3
+                            </div>
+                        </div>
+                        <small id="orange-threshold-message" class="text-muted">
+                            Loading...
+                        </small>
+                    </div>
+                    
+                    <div>
+                        <h6>Red Threshold (1 category)</h6>
+                        <div class="progress">
+                            <div id="red-progress" class="progress-bar bg-red" role="progressbar" style="width: 0%" 
+                                aria-valuenow="0" aria-valuemin="0" aria-valuemax="1">
+                                0/1
+                            </div>
+                        </div>
+                        <small id="red-threshold-message" class="text-muted">
+                            Loading...
+                        </small>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">Based on the Despotism Readiness Framework thresholds</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <!-- Timeline Chart -->
+        <div class="col-lg-8 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-line me-2"></i>Event Timeline
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="eventTimeline" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Events -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-newspaper me-2"></i>Recent Events
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for event in recent_events %}
+                        <a href="/event/{{ event._id }}" class="list-group-item list-group-item-action event-item" data-severity="{{ event.severity }}">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">{{ event.title }}</h6>
+                                <span class="status-indicator"></span>
+                            </div>
+                            <p class="mb-1 small text-truncate">{{ categories[event.category].name }}</p>
+                            <small class="text-muted">{{ event.detected_date|datetime }}</small>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="card-footer text-center">
+                    <a href="/events" class="btn btn-sm btn-outline-secondary">View All Events</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Persistence Chart -->
+    <div class="row">
+        <div class="col-lg-12 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-hourglass me-2"></i>Indicator Persistence
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="persistenceChart" height="200"></canvas>
+                </div>
+                <div class="card-footer">
+                    <small class="text-muted">
+                        Green bars indicate confirmed indicators, yellow bars show indicators still within waiting periods
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden data for chart -->
+<div id="timelineData" data-timeline="{{ timeline_data|tojson }}" style="display: none;"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Dashboard initialization
+    document.addEventListener('DOMContentLoaded', function() {
+        // Apply dynamic styling
+        applyDynamicStyling();
+        
+        // Set up threshold progress bars
+        setupThresholdProgressBars();
+        
+        // Initialize chart
+        initializeTimelineChart();
+        
+        // Add persistence chart
+        updateChartWithPersistence();
+    });
+    
+    // Apply dynamic CSS based on status
+    function applyDynamicStyling() {
+        // Get status from data element
+        const dataElement = document.getElementById('dashboard-data');
+        const status = dataElement.getAttribute('data-status');
+        
+        // Setup main status indicator
+        const headerElement = document.getElementById('status-header');
+        const statusIndicator = document.getElementById('main-status-indicator');
+        const statusText = document.getElementById('status-text');
+        
+        if (headerElement && statusIndicator && statusText) {
+            headerElement.classList.add('bg-' + status);
+            statusIndicator.classList.add('bg-' + status);
+            statusText.classList.add('text-' + status);
+        }
+        
+        // Setup category indicators
+        document.querySelectorAll('.category-row').forEach(row => {
+            const severity = row.getAttribute('data-severity');
+            if (severity) {
+                const indicator = row.querySelector('.status-indicator');
+                if (indicator) {
+                    indicator.classList.add('bg-' + severity);
+                }
+            }
+        });
+        
+        // Setup event indicators
+        document.querySelectorAll('.event-item').forEach(item => {
+            const severity = item.getAttribute('data-severity');
+            if (severity) {
+                const indicator = item.querySelector('.status-indicator');
+                if (indicator) {
+                    indicator.classList.add('bg-' + severity);
+                }
+            }
+        });
+    }
+    
+    // Set up threshold progress bars
+    function setupThresholdProgressBars() {
+        // Get data from hidden element
+        const dataElement = document.getElementById('dashboard-data');
+        
+        // Orange threshold
+        const orangeCount = parseInt(dataElement.getAttribute('data-orange-count'));
+        const orangeThreshold = parseInt(dataElement.getAttribute('data-orange-threshold'));
+        const orangeCrossed = dataElement.getAttribute('data-orange-crossed') === 'true';
+        const orangeProgress = document.getElementById('orange-progress');
+        const orangeMessage = document.getElementById('orange-threshold-message');
+        
+        if (orangeProgress && orangeMessage) {
+            const orangePercent = orangeThreshold > 0 ? (orangeCount / orangeThreshold * 100) : 0;
+            orangeProgress.style.width = orangePercent + '%';
+            orangeProgress.setAttribute('aria-valuenow', orangeCount);
+            orangeProgress.textContent = orangeCount + '/' + orangeThreshold;
+            
+            if (orangeCrossed) {
+                orangeMessage.innerHTML = '<span class="text-danger">Threshold crossed</span>';
+            } else {
+                orangeMessage.textContent = (orangeThreshold - orangeCount) + ' more needed to cross threshold';
+            }
+        }
+        
+        // Red threshold
+        const redCount = parseInt(dataElement.getAttribute('data-red-count'));
+        const redThreshold = parseInt(dataElement.getAttribute('data-red-threshold'));
+        const redCrossed = dataElement.getAttribute('data-red-crossed') === 'true';
+        const redProgress = document.getElementById('red-progress');
+        const redMessage = document.getElementById('red-threshold-message');
+        
+        if (redProgress && redMessage) {
+            const redPercent = redThreshold > 0 ? (redCount / redThreshold * 100) : 0;
+            redProgress.style.width = redPercent + '%';
+            redProgress.setAttribute('aria-valuenow', redCount);
+            redProgress.textContent = redCount + '/' + redThreshold;
+            
+            if (redCrossed) {
+                redMessage.innerHTML = '<span class="text-danger">Threshold crossed</span>';
+            } else {
+                redMessage.textContent = (redThreshold - redCount) + ' more needed to cross threshold';
+            }
+        }
+    }
+    
+    // Initialize timeline chart
+    function initializeTimelineChart() {
+        // Get chart data from hidden element
+        const timelineDataEl = document.getElementById('timelineData');
+        const timelineData = JSON.parse(timelineDataEl.getAttribute('data-timeline'));
+        
+        // Initialize chart
+        const ctx = document.getElementById('eventTimeline').getContext('2d');
+        const eventTimeline = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: timelineData.dates,
+                datasets: [
+                    {
+                        label: 'Red Events',
+                        data: timelineData.red,
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                        fill: true,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Orange Events',
+                        data: timelineData.orange,
+                        borderColor: '#fd7e14',
+                        backgroundColor: 'rgba(253, 126, 20, 0.1)',
+                        fill: true,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Yellow Events',
+                        data: timelineData.yellow,
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        fill: true,
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Event Count'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+    
+    // Add persistence chart
+    function updateChartWithPersistence() {
+        // Get data from category rows
+        const categories = [];
+        const durations = [];
+        const confirmed = [];
+        
+        document.querySelectorAll('.category-row').forEach(row => {
+            const category = row.querySelector('td:first-child').textContent;
+            const severity = row.getAttribute('data-severity');
+            const durationText = row.querySelector('td:nth-child(4)').textContent.trim();
+            const isConfirmed = row.querySelector('td:nth-child(5) i.fa-check') !== null;
+            
+            if (severity !== 'green') {
+                categories.push(category);
+                durations.push(parseInt(durationText) || 0);
+                confirmed.push(isConfirmed);
+            }
+        });
+        
+        // Add persistence chart if we have data
+        if (categories.length > 0) {
+            const persCtx = document.getElementById('persistenceChart').getContext('2d');
+            new Chart(persCtx, {
+                type: 'bar',
+                data: {
+                    labels: categories,
+                    datasets: [{
+                        label: 'Days at Current Level',
+                        data: durations,
+                        backgroundColor: durations.map((d, i) => confirmed[i] ? 'rgba(40, 167, 69, 0.7)' : 'rgba(255, 193, 7, 0.7)'),
+                        borderColor: durations.map((d, i) => confirmed[i] ? 'rgb(40, 167, 69)' : 'rgb(255, 193, 7)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Days'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                footer: function(tooltipItems) {
+                                    const idx = tooltipItems[0].dataIndex;
+                                    return confirmed[idx] ? 'Confirmed' : 'Not yet confirmed';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+</script>
+{% endblock %}

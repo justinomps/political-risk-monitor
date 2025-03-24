@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Events - Political Risk Monitor{% endblock %}
+
+{% block content %}
+<div class="col-12 mt-4">
+    <h2 class="mb-4">Events</h2>
+    
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('events') }}" class="row g-3">
+                <div class="col-md-3">
+                    <label for="category" class="form-label">Category</label>
+                    <select class="form-select" id="category" name="category">
+                        <option value="">All Categories</option>
+                        {% for cat_id, cat_data in categories.items() %}
+                        <option value="{{ cat_id }}" {% if selected_category == cat_id %}selected{% endif %}>
+                            {{ cat_data.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="severity" class="form-label">Severity</label>
+                    <select class="form-select" id="severity" name="severity">
+                        <option value="">All Levels</option>
+                        <option value="yellow" {% if selected_severity == 'yellow' %}selected{% endif %}>Yellow</option>
+                        <option value="orange" {% if selected_severity == 'orange' %}selected{% endif %}>Orange</option>
+                        <option value="red" {% if selected_severity == 'red' %}selected{% endif %}>Red</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="min_score" class="form-label">Min Score</label>
+                    <input type="number" class="form-control" id="min_score" name="min_score" min="0" max="100" 
+                           value="{{ request.args.get('min_score', '') }}" placeholder="0">
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary">Filter</button>
+                    {% if selected_category or selected_severity or request.args.get('min_score') %}
+                    <a href="{{ url_for('events') }}" class="btn btn-outline-secondary ms-2">Clear Filters</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Events List -->
+    <div class="card">
+        <div class="card-body p-0">
+            {% if events %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Title</th>
+                            <th>Category</th>
+                            <th>Severity</th>
+                            <th>Score</th>
+                            <th>Source</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for event in events %}
+                        <tr>
+                            <td>{{ event.detected_date|datetime }}</td>
+                            <td>{{ event.title }}</td>
+                            <td>{{ categories[event.category].name }}</td>
+                            <td>
+                                <span class="status-indicator bg-{{ event.severity }}"></span>
+                                <span class="text-capitalize">{{ event.severity }}</span>
+                            </td>
+                            <td>
+                                {% if event.score %}
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">{{ event.score }}</span>
+                                    <div class="progress flex-grow-1" style="height: 6px;">
+                                        <div class="score-progress-bar bg-{{ event.severity }}" 
+                                             data-score="{{ event.score }}"
+                                             role="progressbar" aria-valuemin="0" aria-valuemax="100">
+                                        </div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>{{ event.source }}</td>
+                            <td>
+                                <a href="{{ url_for('event_detail', event_id=event._id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center">
+                <p class="mb-0">No events found matching your criteria.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set width on score progress bars
+        const progressBars = document.querySelectorAll('.score-progress-bar');
+        progressBars.forEach(bar => {
+            const score = bar.getAttribute('data-score');
+            bar.style.width = score + '%';
+            bar.setAttribute('aria-valuenow', score);
+        });
+    });
+</script>
+{% endblock %}
