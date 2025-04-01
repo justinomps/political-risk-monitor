@@ -40,7 +40,7 @@ class ClaudeAPI:
             }
         }
     
-    def analyze_text(self, text, system_prompt=None, max_tokens=1000, model="claude-3-haiku-20240307"):
+    def analyze_text(self, text, system_prompt=None, max_tokens=1500, model="claude-3-sonnet-20240229"):
         """
         Analyze text using Claude AI.
         

@@ -45,7 +45,7 @@ class NewsAnalyzer:
         self.USE_CLAUDE_ANALYSIS = True
         
         # Set keyword match threshold for Claude analysis
-        self.CLAUDE_MATCH_THRESHOLD = 2
+        self.CLAUDE_MATCH_THRESHOLD = 1
         
         cutoff_date = datetime.datetime.now() - datetime.timedelta(days=days)
         cutoff_date_str = cutoff_date.isoformat()
@@ -110,62 +110,58 @@ class NewsAnalyzer:
         logger.info(f"Completed analysis of {analyzed_count} articles")
         return analyzed_count
     
-    def _keyword_analysis(self, article):
-        """Perform first-stage keyword-based analysis with scoring for Claude decision"""
-        # Combine title and content for analysis
-        text = f"{article.get('title', '')} {article.get('content', '')}".lower()
+def _keyword_analysis(self, article):
+    """Perform first-stage keyword-based analysis with scoring for Claude decision"""
+    # Combine title and content for analysis
+    text = f"{article.get('title', '')} {article.get('content', '')}".lower()
+    
+    results = {
+        'categorized': False,
+        'categories': {},
+        'method': 'keyword',
+        'should_use_claude': False,
+        'match_count': 0
+    }
+    
+    # Check each category
+    for category_id, category_data in self.categories.items():
+        # Default to 'green' (no concern)
+        severity = 'green'
+        category_match_count = 0
         
-        results = {
-            'categorized': False,
-            'categories': {},
-            'method': 'keyword',
-            'should_use_claude': False,
-            'match_count': 0
-        }
+        # Check for keyword matches of increasing severity
+        for keyword in category_data.get('keywords', []):
+            if keyword.lower() in text:
+                severity = 'yellow'  # Base match moves to yellow
+                category_match_count += 1
+                break
         
-        # Check each category
-        for category_id, category_data in self.categories.items():
-            # Default to 'green' (no concern)
-            severity = 'green'
-            category_match_count = 0
-            
-            # Check for keyword matches of increasing severity
-            for keyword in category_data.get('keywords', []):
-                if keyword.lower() in text:
-                    severity = 'yellow'  # Base match moves to yellow
-                    category_match_count += 1
+        # Only check higher levels if already at yellow
+        if severity == 'yellow':
+            for indicator in category_data.get('orange_indicators', []):
+                if indicator.lower() in text:
+                    severity = 'orange'
+                    category_match_count += 2  # Orange matches count more
                     break
             
-            # Only check higher levels if already at yellow
-            if severity == 'yellow':
-                for indicator in category_data.get('orange_indicators', []):
+            if severity == 'orange':
+                for indicator in category_data.get('red_indicators', []):
                     if indicator.lower() in text:
-                        severity = 'orange'
-                        category_match_count += 2  # Orange matches count more
+                        severity = 'red'
+                        category_match_count += 3  # Red matches count even more
                         break
-                
-                if severity == 'orange':
-                    for indicator in category_data.get('red_indicators', []):
-                        if indicator.lower() in text:
-                            severity = 'red'
-                            category_match_count += 3  # Red matches count even more
-                            break
-            
-            # Record the result
-            results['categories'][category_id] = severity
-            results['match_count'] += category_match_count
-            
-            # If any category is not green, mark as categorized
-            if severity != 'green':
-                results['categorized'] = True
         
-        # Determine if Claude should analyze based on match count
-        if 'orange' in results['categories'].values() or 'red' in results['categories'].values():
+        # Record the result
+        results['categories'][category_id] = severity
+        results['match_count'] += category_match_count
+        
+        # If any category is not green, mark as categorized
+        if severity != 'green':
+            results['categorized'] = True
+            # Set should_use_claude to True whenever any category is yellow or above
             results['should_use_claude'] = True
-        else:
-            results['should_use_claude'] = results['match_count'] >= self.CLAUDE_MATCH_THRESHOLD
-        
-        return results
+    
+    return results
     
     def _claude_analysis(self, article, keyword_results):
         """Perform second-stage Claude-based analysis for more nuanced understanding"""
@@ -196,43 +192,54 @@ class NewsAnalyzer:
             logger.error(f"Error in Claude analysis: {str(e)}")
             return None
     
-    def _construct_claude_prompt(self, article, flagged_categories):
-        """Construct a prompt for Claude to analyze the article"""
-        # Base prompt with article content
-        prompt = f"""
-        As a political analyst, I need you to analyze the following news article according to 
-        the "Despotism Readiness Framework" which tracks indicators of democratic backsliding.
-        
-        Please assess this article regarding the following categories: {', '.join(flagged_categories)}
-        
-        Rate each category on a four-level scale:
-        - GREEN: No concerning indicators
-        - YELLOW: Early warning signs
-        - ORANGE: Significant concerns
-        - RED: Critical threat to democratic governance
-        
-        Article Title: {article.get('title', 'No title')}
-        
-        Article Content:
-        {article.get('content', 'No content')}
-        
-        Source: {article.get('source', 'Unknown')}
-        Date: {article.get('published_date', 'Unknown')}
-        
-        Please respond in JSON format like this:
-        {{
-            "categories": {{
-                "category_id": "severity_level",
-                ...
-            }},
-            "explanation": "Your brief analysis of why you assigned these ratings"
-        }}
-        
-        Only include the categories I've asked about, and use only GREEN, YELLOW, ORANGE, or RED as severity levels.
-        """
-        
-        return prompt
+def _construct_claude_prompt(self, article, flagged_categories):
+    """Construct a prompt for Claude to analyze the article"""
+    # Base prompt with article content
+    prompt = f"""
+    As a political analyst, I need you to analyze the following news article according to 
+    the "Despotism Readiness Framework" which tracks indicators of democratic backsliding.
     
+    Please provide the following analysis in a structured JSON format:
+    
+    1. Is this article about the United States? (True/False)
+    2. For each of these categories: {', '.join(flagged_categories)}, provide:
+       - Severity level (GREEN, YELLOW, ORANGE, RED)
+       - Justification for this rating (list key evidence from the article)
+       - Confidence level (1-5, where 5 is highest confidence)
+    3. A summary of why this article is relevant to the framework
+    
+    Rate each category on a four-level scale:
+    - GREEN: No concerning indicators
+    - YELLOW: Early warning signs
+    - ORANGE: Significant concerns
+    - RED: Critical threat to democratic governance
+    
+    Article Title: {article.get('title', 'No title')}
+    
+    Article Content:
+    {article.get('content', 'No content')}
+    
+    Source: {article.get('source', 'Unknown')}
+    Date: {article.get('published_date', 'Unknown')}
+    
+    Please respond in JSON format like this:
+    {{
+        "is_us_based": true/false,
+        "categories": {{
+            "category_id": {{
+                "severity": "GREEN/YELLOW/ORANGE/RED",
+                "evidence": ["evidence1", "evidence2", ...],
+                "confidence": 1-5
+            }}
+        }},
+        "summary": "Your analysis of why this article is relevant to the framework",
+        "reasoning": "Your step-by-step reasoning process for arriving at these ratings"
+    }}
+    
+    Only include the categories I've asked about, and use only GREEN, YELLOW, ORANGE, or RED as severity levels.
+    """
+    
+    return prompt    
     def _call_claude_api(self, prompt):
         """Call Claude API with the given prompt"""
         headers = {
@@ -267,53 +274,76 @@ class NewsAnalyzer:
             logger.error(f"Error calling Claude API: {str(e)}")
             return None
     
-    def _parse_claude_response(self, response, flagged_categories):
-        """Parse Claude's response to extract ratings and explanation"""
-        if not response:
-            logger.warning("Empty response from Claude")
+def _parse_claude_response(self, response, flagged_categories):
+    """Parse Claude's response to extract ratings, explanations, and confidence"""
+    if not response:
+        logger.warning("Empty response from Claude")
+        return {'categorized': False, 'categories': {}}
+    
+    try:
+        # Extract JSON from response
+        json_start = response.find('{')
+        json_end = response.rfind('}') + 1
+        
+        if json_start == -1 or json_end == 0:
+            logger.warning("No JSON found in Claude response")
             return {'categorized': False, 'categories': {}}
         
-        try:
-            # Extract JSON from response
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            
-            if json_start == -1 or json_end == 0:
-                logger.warning("No JSON found in Claude response")
-                return {'categorized': False, 'categories': {}}
-            
-            json_str = response[json_start:json_end]
-            result = json.loads(json_str)
-            
-            # Normalize the response
-            categories = result.get('categories', {})
-            normalized_categories = {}
-            
-            for cat_id in flagged_categories:
-                if cat_id in categories:
-                    # Convert to lowercase for consistency
-                    severity = categories[cat_id].lower()
-                    
-                    # Validate severity level
-                    if severity in ['green', 'yellow', 'orange', 'red']:
-                        normalized_categories[cat_id] = severity
-                    else:
-                        # Default to keyword analysis result if invalid
-                        normalized_categories[cat_id] = 'yellow'
-            
-            # Determine if any categories have concerns
-            categorized = any(sev != 'green' for sev in normalized_categories.values())
-            
-            return {
-                'categorized': categorized,
-                'categories': normalized_categories,
-                'explanation': result.get('explanation', 'No explanation provided')
-            }
-            
-        except Exception as e:
-            logger.error(f"Error parsing Claude response: {str(e)}")
-            return {'categorized': False, 'categories': {}}
-    
+        json_str = response[json_start:json_end]
+        result = json.loads(json_str)
+        
+        # Normalize the response
+        is_us_based = result.get('is_us_based', True)
+        categories_data = result.get('categories', {})
+        summary = result.get('summary', 'No summary provided')
+        reasoning = result.get('reasoning', 'No reasoning provided')
+        
+        normalized_categories = {}
+        category_evidence = {}
+        category_confidence = {}
+        
+        for cat_id in flagged_categories:
+            if cat_id in categories_data:
+                cat_data = categories_data[cat_id]
+                
+                # Handle both string and object formats
+                if isinstance(cat_data, str):
+                    severity = cat_data.lower()
+                    evidence = []
+                    confidence = 3  # Default confidence
+                else:
+                    severity = cat_data.get('severity', '').lower()
+                    evidence = cat_data.get('evidence', [])
+                    confidence = cat_data.get('confidence', 3)
+                
+                # Validate severity level
+                if severity in ['green', 'yellow', 'orange', 'red']:
+                    normalized_categories[cat_id] = severity
+                    category_evidence[cat_id] = evidence
+                    category_confidence[cat_id] = confidence
+                else:
+                    # Default to yellow if invalid severity but was flagged
+                    normalized_categories[cat_id] = 'yellow'
+                    category_evidence[cat_id] = []
+                    category_confidence[cat_id] = 2
+        
+        # Determine if any categories have concerns
+        categorized = any(sev != 'green' for sev in normalized_categories.values())
+        
+        return {
+            'categorized': categorized,
+            'is_us_based': is_us_based,
+            'categories': normalized_categories,
+            'evidence': category_evidence,
+            'confidence': category_confidence,
+            'explanation': summary,
+            'reasoning': reasoning
+        }
+        
+    except Exception as e:
+        logger.error(f"Error parsing Claude response: {str(e)}")
+        return {'categorized': False, 'categories': {}}
+        
     def _combine_analysis_results(self, keyword_results, claude_results=None):
         """Combine results from keyword and Claude analysis"""
         # If Claude analysis is disabled or no Claude results, just use keyword results
@@ -348,10 +378,76 @@ class NewsAnalyzer:
         
         return combined_results
     
-    def _create_events(self, article, analysis_results):
-        """Create events for categorized articles with persistence tracking"""
+def _create_events(self, article, analysis_results):
+    """Create events for categorized articles with persistence tracking"""
+    for category_id, severity in analysis_results['categories'].items():
+        # Only create events for non-green categories
+        if severity == 'green':
+            continue
+            
+        # Check if there's an existing event for this category
+        existing_events = list(self.events_collection.find({
+            'category': category_id,
+            'detected_date': {'$gte': (datetime.datetime.now() - datetime.timedelta(days=90)).isoformat()}
+        }).sort('detected_date', -1))
         
+        # Set start date for persistence tracking
+        start_date = datetime.datetime.now().isoformat()
+        previous_severity = None
         
+        # If we have a previous event, track persistence
+        if existing_events:
+            latest_event = existing_events[0]
+            
+            # If severity hasn't changed, keep the original start date
+            if latest_event.get('severity') == severity:
+                start_date = latest_event.get('start_date', latest_event['detected_date'])
+            
+            # Track previous severity for detecting rapid escalation
+            previous_severity = latest_event.get('severity')
+            
+        # Get evidence and confidence if available
+        evidence = analysis_results.get('evidence', {}).get(category_id, [])
+        confidence = analysis_results.get('confidence', {}).get(category_id, 3)
+        is_us_based = analysis_results.get('is_us_based', True)
+        reasoning = analysis_results.get('reasoning', '')
+        
+        # Format evidence as HTML list if available
+        evidence_html = ""
+        if evidence:
+            evidence_html = "<ul>"
+            for item in evidence:
+                evidence_html += f"<li>{item}</li>"
+            evidence_html += "</ul>"
+        
+        # Create the event with new fields
+        event = {
+            'article_id': article['_id'],
+            'title': article.get('title', 'No title'),
+            'url': article.get('url', ''),
+            'source': article.get('source', 'Unknown'),
+            'published_date': article.get('published_date', ''),
+            'category': category_id,
+            'severity': severity,
+            'detected_date': datetime.datetime.now().isoformat(),
+            'methods': analysis_results.get('methods', ['keyword']),
+            'explanation': analysis_results.get('explanation', ''),
+            'evidence': evidence,
+            'evidence_html': evidence_html,
+            'confidence': confidence,
+            'is_us_based': is_us_based,
+            'reasoning': reasoning,
+            
+            # Persistence tracking fields
+            'start_date': start_date,
+            'previous_severity': previous_severity,
+            'severity_change_date': datetime.datetime.now().isoformat() if previous_severity != severity else None,
+            'duration_days': 0,  # Will be calculated in summary generation
+            'confirmed': False   # Will be updated in summary generation
+        }
+        
+        self.events_collection.insert_one(event)
+        logger.info(f"Created {severity} event for category {category_id}: {article.get('title', 'No title')}")        
     def _generate_summary(self):
         """Generate a summary of the current state based on recent events with persistence tracking"""
         # Get events from the past 7 days

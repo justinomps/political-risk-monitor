@@ -119,7 +119,31 @@
                         </div>
                     </div>
                     {% endif %}
-                    
+                    {% if event.evidence %}
+<div class="mb-3">
+    <h5>Evidence</h5>
+    <div class="card bg-light">
+        <div class="card-body">
+            {{ event.evidence_html|safe }}
+            <p class="mt-2"><strong>Analysis Confidence:</strong> {{ event.confidence }} / 5</p>
+            {% if event.is_us_based is defined %}
+            <p><strong>US-Based Content:</strong> {% if event.is_us_based %}Yes{% else %}No{% endif %}</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if event.reasoning %}
+<div class="mb-3">
+    <h5>Reasoning Process</h5>
+    <div class="card bg-light">
+        <div class="card-body">
+            {{ event.reasoning|safe }}
+        </div>
+    </div>
+</div>
+{% endif %}
                     <!-- Original Article -->
                     {% if article %}
                     <div>
