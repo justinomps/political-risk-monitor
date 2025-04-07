@@ -1,516 +1,839 @@
-{% extends "base.html" %}
+{% extends "base.html" %} {# Assumes base.html provides Bootstrap, FontAwesome, Chart.js #}
 
 {% block title %}Dashboard - Political Risk Monitor{% endblock %}
 
 {% block extra_css %}
 <style>
-    .alert-orange {
-        background-color: #fd7e14;
+    /* Color definitions using Bootstrap variables where possible */
+    :root {
+      --bs-yellow: #ffc107;
+      --bs-orange: #fd7e14;
+      --bs-red: #dc3545;
+      --bs-green: #198754;
+      --bs-info: #0dcaf0; /* Or your preferred info color */
+    }
+
+    .alert-orange { background-color: var(--bs-orange); color: white; }
+    .bg-yellow { background-color: var(--bs-yellow) !important; color: #000 !important; }
+    .bg-orange { background-color: var(--bs-orange) !important; color: #fff !important; }
+    .bg-red { background-color: var(--bs-red) !important; color: #fff !important; }
+    .bg-green { background-color: var(--bs-green) !important; color: #fff !important; }
+    .text-yellow { color: var(--bs-yellow) !important; }
+    .text-orange { color: var(--bs-orange) !important; }
+    .text-red { color: var(--bs-red) !important; }
+    .text-green { color: var(--bs-green) !important; }
+
+    /* Status indicators styling */
+    .status-indicator {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 50%;
+        vertical-align: middle;
+        margin-right: 0.25rem; /* Add some spacing */
+    }
+    .list-group-item .status-indicator {
+        width: 0.8rem;
+        height: 0.8rem;
+    }
+    #main-status-indicator {
+         width: 80px; /* Keep large size */
+         height: 80px;
+         border: 3px solid rgba(0,0,0,0.1);
+    }
+
+    /* Ensure card headers have contrast */
+    .card-header.bg-green,
+    .card-header.bg-orange,
+    .card-header.bg-red {
         color: white;
     }
+    .card-header.bg-yellow {
+         color: black; /* Yellow needs dark text */
+    }
+
+    /* Ensure progress bars have visible text */
+    .progress-bar {
+        color: white;
+        font-weight: bold;
+        text-shadow: 1px 1px 1px rgba(0,0,0,0.4);
+        overflow: hidden; /* Prevent text overflow */
+        white-space: nowrap;
+    }
+    .progress-bar.bg-orange, .progress-bar.bg-red {
+        color: white;
+    }
+    .progress-bar.bg-yellow {
+        color: black; /* Yellow needs dark text */
+    }
+
+    /* Styling for advice tabs */
+    .advice-content ul {
+        padding-left: 1.2rem; /* Indent list */
+        margin-bottom: 0; /* Remove default bottom margin */
+        max-height: 250px; /* Limit height and add scroll */
+        overflow-y: auto;
+        border: 1px solid #eee;
+        padding: 10px;
+        border-radius: 0.25rem;
+        background-color: #f8f9fa; /* Light background for advice area */
+    }
+    .advice-content li {
+        margin-bottom: 0.4rem; /* Space between list items */
+        font-size: 0.85rem; /* Slightly smaller font */
+        line-height: 1.4;
+    }
+    .nav-tabs .nav-link {
+        font-weight: bold;
+        color: var(--bs-secondary); /* Dim inactive tabs */
+        padding: 0.5rem 0.8rem; /* Adjust tab padding */
+    }
+     .nav-tabs .nav-link.active {
+        color: var(--bs-primary); /* Highlight active tab */
+    }
+    .tab-content {
+        padding-top: 0.5rem; /* Reduce space below tabs */
+    }
+    .advice-selectors label {
+        font-size: 0.8rem;
+        font-weight: bold;
+        margin-bottom: 0.2rem;
+    }
+     .advice-selectors .form-select {
+        font-size: 0.85rem;
+        padding: 0.25rem 0.5rem;
+        height: auto; /* Adjust height */
+    }
+
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        #main-status-indicator {
+            width: 60px;
+            height: 60px;
+        }
+        .card-body h2, .card-body h3 {
+            font-size: 1.5rem;
+        }
+         .advice-content ul {
+             max-height: 200px; /* Shorter scroll area on mobile */
+         }
+    }
+
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="col-12">
-    <!-- Hidden data elements for JavaScript -->
-    <div id="dashboard-data" 
-         data-status="{{ summary.overall_status }}"
-         data-orange-count="{{ summary.categories.values()|selectattr('current_severity', 'equalto', 'orange')|list|length }}"
-         data-orange-threshold="{{ summary.thresholds.orange_threshold }}"
-         data-orange-crossed="{{ summary.thresholds.orange_threshold_crossed|lower }}"
-         data-red-count="{{ summary.categories.values()|selectattr('current_severity', 'equalto', 'red')|list|length }}"
-         data-red-threshold="{{ summary.thresholds.red_threshold }}"
-         data-red-crossed="{{ summary.thresholds.red_threshold_crossed|lower }}"
-         style="display: none;">
-    </div>
+<div class="container-fluid mt-3"> {# Use container-fluid for full width #}
+    <div class="row">
+        <div class="col-12">
+            {# Prepare data safely, providing defaults if summary or nested keys are missing #}
+            <div id="dashboard-data"
+                 {% set thresholds = summary.get('thresholds', {}) %}
+                 {% set categories_data = summary.get('categories', {}) %}
+                 {% set alert_level_str = summary.get('alert_level', 'None') %}
 
-    <div class="row mt-4">
-        <!-- Status Overview -->
-        <div class="col-md-6 col-lg-3 mb-4">
-            <div class="card h-100">
-                <div id="status-header" class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-tachometer-alt me-2"></i>Current Status
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-flex flex-column align-items-center">
-                        <div id="main-status-indicator" class="status-indicator mb-3" style="width: 80px; height: 80px;"></div>
-                        <h2 id="status-text" class="mb-0 text-capitalize">{{ summary.overall_status }}</h2>
-                        <p class="text-muted mt-2">Last updated: {{ summary.date|datetime }}</p>
-                        
-                        <div class="mt-3">
-                            <span class="badge bg-yellow me-1">{{ summary.yellow_count }}</span> Yellow
-                            <span class="badge bg-orange mx-1">{{ summary.orange_count }}</span> Orange
-                            <span class="badge bg-red ms-1">{{ summary.red_count }}</span> Red
-                        </div>
-                    </div>
-                </div>
-                <div class="card-footer">
-                    <small class="text-muted">
-                        {% if summary.overall_status == 'green' %}
-                        No concerning indicators detected
-                        {% elif summary.overall_status == 'yellow' %}
-                        Early warning signs detected
-                        {% elif summary.overall_status == 'orange' %}
-                        Significant concerns, prepare for action
-                        {% elif summary.overall_status == 'red' %}
-                        Critical threat - Action recommended
-                        {% endif %}
-                    </small>
-                </div>
+                 {# Determine numeric alert level for JS #}
+                 {% if alert_level_str is number %} {% set alert_level_num = alert_level_str|int %}
+                 {% elif alert_level_str == 'Low' %} {% set alert_level_num = 1 %}
+                 {% elif alert_level_str == 'Medium' %} {% set alert_level_num = 3 %} {# Map Medium to Orange Level 3 #}
+                 {% elif alert_level_str == 'High' %} {% set alert_level_num = 4 %} {# Map High to Red Level 4 #}
+                 {% else %} {% set alert_level_num = 1 %} {# Default to level 1 #}
+                 {% endif %}
+                 {# Clamp level #}
+                 {% if alert_level_num < 1 %}{% set alert_level_num = 1 %}{% endif %}
+                 {% if alert_level_num > 5 %}{% set alert_level_num = 5 %}{% endif %}
+
+
+                 {% set orange_thresh = thresholds.get('orange_alert_threshold', 3) %}
+                 {% set red_thresh = thresholds.get('red_alert_threshold', 1) %}
+                 {% set orange_crossed = thresholds.get('orange_threshold_crossed', false) %}
+                 {% set red_crossed = thresholds.get('red_threshold_crossed', false) %}
+
+                 {% set confirmed_orange_count = categories_data.values()|selectattr('confirmed')|selectattr('current_severity', 'equalto', 'orange')|list|length %}
+                 {% set confirmed_red_count = categories_data.values()|selectattr('confirmed')|selectattr('current_severity', 'equalto', 'red')|list|length %}
+                 {% set confirmed_orange_red_count = thresholds.get('confirmed_orange_or_red_count', confirmed_orange_count + confirmed_red_count) %}
+
+
+                 data-status="{{ summary.get('overall_status', 'green') }}"
+                 data-alert-level-num="{{ alert_level_num }}" {# Pass numeric level to JS #}
+                 data-orange-count="{{ confirmed_orange_red_count }}"
+                 data-orange-threshold="{{ orange_thresh }}"
+                 data-orange-crossed="{{ orange_crossed|string|lower }}"
+                 data-red-count="{{ confirmed_red_count }}"
+                 data-red-threshold="{{ red_thresh }}"
+                 data-red-crossed="{{ red_crossed|string|lower }}"
+                 style="display: none;">
             </div>
-        </div>
-        
-        <!-- Alert Level -->
-        <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-exclamation-triangle me-2"></i>Alert Level
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="d-flex flex-column align-items-center">
-                        <!-- This div will have a different color based on alert level -->
-                        <div id="alert-level-indicator" class="alert alert-{{ 'success' if summary.alert_level == 1 else 'warning' if summary.alert_level == 2 else 'orange' if summary.alert_level == 3 else 'danger' if summary.alert_level >= 4 else 'info' }} w-100 text-center">
-                            <h3 class="mb-0">Level {{ summary.alert_level }}</h3>
-                            <p class="mb-0">
-                                {% if summary.alert_level == 1 %}
-                                Normal Monitoring
-                                {% elif summary.alert_level == 2 %}
-                                Preparation Stage
-                                {% elif summary.alert_level == 3 %}
-                                Active Planning
-                                {% elif summary.alert_level == 4 %}
-                                Readiness Stage
-                                {% elif summary.alert_level == 5 %}
-                                Immediate Action
+
+            <div class="row">
+                <div class="col-xl-3 col-lg-6 col-md-6 mb-4"> {# Adjusted grid for better layout #}
+                    <div class="card h-100 shadow-sm"> {# Added shadow #}
+                        <div id="status-header" class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-tachometer-alt me-2"></i>Current Status
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex flex-column align-items-center">
+                                <div id="main-status-indicator" class="status-indicator mb-3"></div>
+                                <h2 id="status-text" class="mb-0 text-capitalize">{{ summary.get('overall_status', 'green') }}</h2>
+                                <p class="text-muted mt-2 small">Last updated: {{ summary.get('date')|datetime }}</p> {# Use .get() #}
+
+                                <div class="mt-3">
+                                    {# Use counts from severity_counts_in_period safely #}
+                                    {% set counts = summary.get('severity_counts_in_period', {}) %}
+                                    <span class="badge bg-yellow me-1">{{ counts.get('yellow', 0) }}</span> Yellow
+                                    <span class="badge bg-orange mx-1">{{ counts.get('orange', 0) }}</span> Orange
+                                    <span class="badge bg-red ms-1">{{ counts.get('red', 0) }}</span> Red
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-footer bg-light"> {# Lighter footer #}
+                            <small class="text-muted">
+                                {% set status = summary.get('overall_status', 'green') %}
+                                {% if status == 'green' %}
+                                No concerning indicators detected.
+                                {% elif status == 'yellow' %}
+                                Early warning signs detected. Monitor closely.
+                                {% elif status == 'orange' %}
+                                Significant concerns. Prepare for action.
+                                {% elif status == 'red' %}
+                                Critical threat. Action recommended.
+                                {% else %}
+                                Status unknown or unavailable.
                                 {% endif %}
-                            </p>
-                        </div>
-                        
-                        <!-- Recommendations -->
-                        <div class="mt-3">
-                            <h6>Recommended Actions:</h6>
-                            <p>{{ summary.alert_recommendations }}</p>
+                            </small>
                         </div>
                     </div>
                 </div>
-                <div class="card-footer">
-                    <small class="text-muted">
-                        Based on confirmed indicators and acceleration patterns
-                    </small>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Categories Overview -->
-        <div class="col-md-6 col-lg-5 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-list-ul me-2"></i>Category Status
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Category</th>
-                                    <th class="text-center">Status</th>
-                                    <th class="text-center">Duration</th>
-                                    <th class="text-center">Confirmed</th>
-                                    <th class="text-end">Events</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for cat_id, cat_data in summary.categories.items() %}
-                                <tr class="category-row" data-severity="{{ cat_data.current_severity }}">
-                                    <td>{{ categories[cat_id].name }}</td>
-                                    <td class="text-center">
-                                        <span class="status-indicator"></span>
-                                    </td>
-                                    <td class="text-center">
-                                        {% if cat_data.current_severity != 'green' %}
-                                        {{ cat_data.duration_days|default(0) }} days
-                                        {% else %}
-                                        -
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-center">
-                                        {% if cat_data.current_severity != 'green' %}
-                                        {% if cat_data.confirmed %}
-                                        <i class="fas fa-check text-success"></i>
-                                        {% else %}
-                                        <i class="fas fa-clock text-warning"></i>
-                                        {% endif %}
-                                        {% else %}
-                                        -
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">
-                                        {% set total = cat_data.yellow + cat_data.orange + cat_data.red %}
-                                        {% if total > 0 %}
-                                        <a href="/events?category={{ cat_id }}">{{ total }}</a>
-                                        {% else %}
-                                        0
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Thresholds Status -->
-        <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-exclamation-triangle me-2"></i>Threshold Status
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-4">
-                        <h6>Orange Threshold (3 categories)</h6>
-                        <div class="progress">
-                            <div id="orange-progress" class="progress-bar bg-orange" role="progressbar" style="width: 0%"
-                                aria-valuenow="0" aria-valuemin="0" aria-valuemax="3">
-                                0/3
-                            </div>
-                        </div>
-                        <small id="orange-threshold-message" class="text-muted">
-                            Loading...
-                        </small>
-                    </div>
-                    
-                    <div>
-                        <h6>Red Threshold (1 category)</h6>
-                        <div class="progress">
-                            <div id="red-progress" class="progress-bar bg-red" role="progressbar" style="width: 0%" 
-                                aria-valuenow="0" aria-valuemin="0" aria-valuemax="1">
-                                0/1
-                            </div>
-                        </div>
-                        <small id="red-threshold-message" class="text-muted">
-                            Loading...
-                        </small>
-                    </div>
-                </div>
-                <div class="card-footer">
-                    <small class="text-muted">Based on the Despotism Readiness Framework thresholds</small>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="row">
-        <!-- Timeline Chart -->
-        <div class="col-lg-8 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-chart-line me-2"></i>Event Timeline
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="eventTimeline" height="300"></canvas>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Recent Events -->
-        <div class="col-lg-4 mb-4">
-            <div class="card h-100">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-newspaper me-2"></i>Recent Events
-                    </h5>
-                </div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush">
-                        {% for event in recent_events %}
-                        <a href="/event/{{ event._id }}" class="list-group-item list-group-item-action event-item" data-severity="{{ event.severity }}">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">{{ event.title }}</h6>
-                                <span class="status-indicator"></span>
-                            </div>
-                            <p class="mb-1 small text-truncate">{{ categories[event.category].name }}</p>
-                            <small class="text-muted">{{ event.detected_date|datetime }}</small>
-                        </a>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="card-footer text-center">
-                    <a href="/events" class="btn btn-sm btn-outline-secondary">View All Events</a>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Persistence Chart -->
-    <div class="row">
-        <div class="col-lg-12 mb-4">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="fas fa-hourglass me-2"></i>Indicator Persistence
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="persistenceChart" height="200"></canvas>
-                </div>
-                <div class="card-footer">
-                    <small class="text-muted">
-                        Green bars indicate confirmed indicators, yellow bars show indicators still within waiting periods
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Hidden data for chart -->
-<div id="timelineData" data-timeline="{{ timeline_data|tojson }}" style="display: none;"></div>
+                <div class="col-xl-4 col-lg-6 col-md-6 mb-4"> {# Adjusted grid #}
+                    <div class="card h-100 shadow-sm"> {# Added shadow #}
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-shield-alt me-2"></i>Alert Level & Guidance
+                            </h5>
+                        </div>
+                        <div class="card-body d-flex flex-column"> {# Use flex column #}
+
+                            {# Determine color based on numeric level derived earlier #}
+                            {% set alert_class = 'success' if alert_level_num == 1 else 'warning' if alert_level_num == 2 else 'orange' if alert_level_num == 3 else 'danger' if alert_level_num >= 4 else 'info' %}
+
+                            <div id="alert-level-indicator" class="alert alert-{{ alert_class }} w-100 text-center mb-3">
+                                <h3 class="mb-0">Level {{ alert_level_num }}</h3>
+                                <p class="mb-0 small text-capitalize">({{ summary.get('overall_status', 'N/A') }})</p>
+                            </div>
+
+                            <nav>
+                              <div class="nav nav-tabs nav-fill mb-2" id="nav-tab" role="tablist"> {# Reduced bottom margin #}
+                                <button class="nav-link active" id="nav-fight-tab" data-bs-toggle="tab" data-bs-target="#nav-fight" type="button" role="tab" aria-controls="nav-fight" aria-selected="true">
+                                   <i class="fas fa-fist-raised me-1"></i> Fight
+                                </button>
+                                <button class="nav-link" id="nav-flight-tab" data-bs-toggle="tab" data-bs-target="#nav-flight" type="button" role="tab" aria-controls="nav-flight" aria-selected="false">
+                                   <i class="fas fa-plane-departure me-1"></i> Flight
+                                </button>
+                              </div>
+                            </nav>
+                            <div class="tab-content flex-grow-1" id="nav-tabContent"> {# Allow tab content to grow #}
+                              {# --- FIGHT TAB --- #}
+                              <div class="tab-pane fade show active" id="nav-fight" role="tabpanel" aria-labelledby="nav-fight-tab">
+                                <div class="advice-selectors row gx-2 mb-2"> {# Use grid for layout #}
+                                    <div class="col">
+                                        <label for="fight-persona-select" class="form-label">Persona:</label>
+                                        <select class="form-select form-select-sm" id="fight-persona-select">
+                                            <option value="individual" selected>Individual</option>
+                                            <option value="family">Family</option>
+                                            <option value="business">Business Owner</option>
+                                        </select>
+                                    </div>
+                                    <div class="col">
+                                        <label for="fight-resource-select" class="form-label">Resources:</label>
+                                        <select class="form-select form-select-sm" id="fight-resource-select">
+                                            <option value="limited" selected>Limited</option>
+                                            <option value="moderate">Moderate</option>
+                                            <option value="substantial">Substantial</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="advice-content">
+                                    <h6>Resilience / Resistance Actions:</h6>
+                                    <ul id="fight-advice-display">
+                                        {# Content generated by JavaScript #}
+                                        <li>Loading...</li>
+                                    </ul>
+                                </div>
+                              </div>
+                              {# --- FLIGHT TAB --- #}
+                              <div class="tab-pane fade" id="nav-flight" role="tabpanel" aria-labelledby="nav-flight-tab">
+                                 <div class="advice-selectors row gx-2 mb-2"> {# Use grid for layout #}
+                                    <div class="col">
+                                        <label for="flight-persona-select" class="form-label">Persona:</label>
+                                        <select class="form-select form-select-sm" id="flight-persona-select">
+                                            <option value="individual" selected>Individual</option>
+                                            <option value="family">Family</option>
+                                            <option value="business">Business Owner</option>
+                                        </select>
+                                    </div>
+                                    <div class="col">
+                                        <label for="flight-resource-select" class="form-label">Resources:</label>
+                                        <select class="form-select form-select-sm" id="flight-resource-select">
+                                            <option value="limited" selected>Limited</option>
+                                            <option value="moderate">Moderate</option>
+                                            <option value="substantial">Substantial</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="advice-content">
+                                    <h6>Preparation / Evacuation Actions:</h6>
+                                    <ul id="flight-advice-display">
+                                         {# Content generated by JavaScript #}
+                                         <li>Loading...</li>
+                                    </ul>
+                                </div>
+                              </div>
+                            </div>
+                             </div>
+                         <div class="card-footer bg-light"> {# Lighter footer #}
+                            <small class="text-muted">
+                                Guidance based on selected scenario.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-xl-5 col-lg-12 col-md-12 mb-4"> {# Adjusted grid #}
+                    <div class="card h-100 shadow-sm"> {# Added shadow #}
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-list-ul me-2"></i>Category Status
+                            </h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Category</th>
+                                            <th class="text-center">Status</th>
+                                            <th class="text-center">Duration</th>
+                                            <th class="text-center">Confirmed</th>
+                                            <th class="text-end">Events (Period)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% if categories_data %} {# Use variable defined earlier #}
+                                            {# Sort categories by name for consistent order #}
+                                            {% for cat_id, cat_data in categories_data.items()|sort(attribute='0') %}
+                                            {% set cat_config = categories.get(cat_id, {'name': cat_id}) %} {# Handle missing category config #}
+                                            {% set current_severity = cat_data.get('current_severity', 'green') %}
+                                            <tr class="category-row" data-severity="{{ current_severity }}">
+                                                <td>{{ cat_config.name }}</td>
+                                                <td class="text-center">
+                                                    <span class="status-indicator" title="{{ current_severity|capitalize }}"></span>
+                                                </td>
+                                                <td class="text-center">
+                                                    {% if current_severity != 'green' %}
+                                                    {{ cat_data.get('duration_days', 0)|int }} days
+                                                    {% else %}
+                                                    -
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-center">
+                                                    {% if current_severity != 'green' %}
+                                                        {% if cat_data.get('confirmed', false) %}
+                                                        <i class="fas fa-check text-success" title="Confirmed"></i>
+                                                        {% else %}
+                                                        <i class="fas fa-clock text-warning" title="Pending Confirmation"></i>
+                                                        {% endif %}
+                                                    {% else %}
+                                                    -
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-end">
+                                                    {# Use counts from severity_counts_in_period safely #}
+                                                    {% set sev_counts = cat_data.get('severity_counts_in_period', {}) %}
+                                                    {% set total = sev_counts.get('yellow', 0) + sev_counts.get('orange', 0) + sev_counts.get('red', 0) %}
+                                                    {% if total > 0 %}
+                                                    <a href="{{ url_for('events', category=cat_id) }}">{{ total }}</a>
+                                                    {% else %}
+                                                    0
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        {% else %}
+                                        <tr><td colspan="5" class="text-center text-muted py-3">No category data available.</td></tr>
+                                        {% endif %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div> {# End of first row #}
+
+            <div class="row">
+                 <div class="col-md-6 col-lg-4 mb-4">
+                   <div class="card h-100 shadow-sm"> {# Added shadow #}
+                       <div class="card-header">
+                           <h5 class="card-title mb-0">
+                               <i class="fas fa-bell me-2"></i>Threshold Status </h5>
+                       </div>
+                       <div class="card-body">
+                           <div class="mb-4">
+                               <h6>Orange Threshold ({{ orange_thresh }} confirmed categories)</h6>
+                               <div class="progress" style="height: 20px;">
+                                   <div id="orange-progress" class="progress-bar bg-orange" role="progressbar" style="width: 0%;"
+                                        aria-valuenow="0" aria-valuemin="0" aria-valuemax="{{ orange_thresh }}">
+                                        0/{{ orange_thresh }}
+                                   </div>
+                               </div>
+                               <small id="orange-threshold-message" class="text-muted">
+                                   Loading...
+                               </small>
+                           </div>
+
+                           <div>
+                               <h6>Red Threshold ({{ red_thresh }} confirmed category)</h6>
+                               <div class="progress" style="height: 20px;">
+                                   <div id="red-progress" class="progress-bar bg-red" role="progressbar" style="width: 0%;"
+                                        aria-valuenow="0" aria-valuemin="0" aria-valuemax="{{ red_thresh }}">
+                                        0/{{ red_thresh }}
+                                   </div>
+                               </div>
+                               <small id="red-threshold-message" class="text-muted">
+                                   Loading...
+                               </small>
+                           </div>
+                       </div>
+                       <div class="card-footer bg-light"> {# Lighter footer #}
+                           <small class="text-muted">Based on count of confirmed Orange/Red categories</small>
+                       </div>
+                   </div>
+               </div>
+
+                <div class="col-md-6 col-lg-8 mb-4"> {# Adjusted grid #}
+                    <div class="card h-100 shadow-sm"> {# Added shadow #}
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-chart-line me-2"></i>Event Timeline (Last 7 Days)
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            {# Add a check for timeline_data existence #}
+                            {% if timeline_data and timeline_data.dates %}
+                                <canvas id="eventTimeline" height="300"></canvas>
+                            {% else %}
+                                <p class="text-center text-muted my-5">No timeline data available for the selected period.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div> {# End of second row #}
+
+            <div class="row">
+                <div class="col-lg-4 mb-4">
+                    <div class="card h-100 shadow-sm"> {# Added shadow #}
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-newspaper me-2"></i>Recent Events
+                            </h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group list-group-flush">
+                                {% if recent_events %}
+                                    {% for event in recent_events %}
+                                    {% set cat_config = categories.get(event.category, {'name': event.category}) %} {# Handle missing category config #}
+                                    <a href="{{ url_for('event_detail', event_id=event._id) }}" class="list-group-item list-group-item-action event-item" data-severity="{{ event.severity|default('green') }}">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1 text-truncate" title="{{ event.title }}">{{ event.title }}</h6>
+                                            <span class="status-indicator"></span>
+                                        </div>
+                                        <p class="mb-1 small text-truncate">{{ cat_config.name }}</p>
+                                        <small class="text-muted">{{ event.detected_date|datetime }}</small>
+                                    </a>
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="list-group-item">
+                                        <p class="text-center text-muted mb-0 py-3">No recent events found.</p>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="card-footer text-center bg-light"> {# Lighter footer #}
+                            <a href="{{ url_for('events') }}" class="btn btn-sm btn-outline-secondary">View All Events</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-8 mb-4"> {# Adjusted grid #}
+                    <div class="card h-100 shadow-sm"> {# Added shadow #}
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">
+                                <i class="fas fa-hourglass-half me-2"></i>Indicator Persistence </h5>
+                        </div>
+                        <div class="card-body">
+                             {# Add placeholder for when chart data is missing #}
+                            <canvas id="persistenceChart" height="300"></canvas> {# Increased height #}
+                            <div id="persistenceChartPlaceholder" class="text-center text-muted" style="display: none; padding: 50px 0;">
+                                No non-green indicators with persistence data found.
+                            </div>
+                        </div>
+                        <div class="card-footer bg-light"> {# Lighter footer #}
+                            <small class="text-muted">
+                                Shows days indicators have been at their current non-green level. <span style="color: #198754; font-weight:bold;">Green bars</span> = Confirmed, <span style="color: #ffc107; font-weight:bold;">Yellow bars</span> = Pending Confirmation.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div> {# End of third row #}
+        </div> {# End col-12 #}
+    </div> {# End outer row #}
+</div> {# End container-fluid #}
+
+
+<script id="timelineJsonData" type="application/json">
+  {{ timeline_data|tojson|safe if timeline_data else '{}' }}
+</script>
+<script id="adviceJsonData" type="application/json">
+  {{ advice_data|tojson|safe if advice_data else '{}' }}
+</script>
+
+
 {% endblock %}
 
 {% block extra_js %}
+{# Ensure Chart.js is loaded, assuming it's in base.html or here #}
+{# Example: <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script> #}
+{# Ensure Bootstrap JS (including Popper) is loaded for tabs #}
+{# Example: <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script> #}
+
 <script>
+    // Global variable to hold parsed advice data
+    let allAdviceData = {};
+    let currentAlertLevel = 1; // Default alert level
+
     // Dashboard initialization
     document.addEventListener('DOMContentLoaded', function() {
-        // Apply dynamic styling
-        applyDynamicStyling();
-        
-        // Set up threshold progress bars
-        setupThresholdProgressBars();
-        
-        // Initialize chart
-        initializeTimelineChart();
-        
-        // Add persistence chart
-        updateChartWithPersistence();
+        console.log("Dashboard DOM Loaded");
+        try {
+            // Get current alert level from data attribute
+            const dataElement = document.getElementById('dashboard-data');
+            if (dataElement) {
+                currentAlertLevel = parseInt(dataElement.getAttribute('data-alert-level-num') || '1');
+            } else {
+                 console.error("Dashboard data element not found!");
+            }
+
+            // Parse advice data
+            const adviceJsonDataEl = document.getElementById('adviceJsonData');
+            if (adviceJsonDataEl) {
+                try {
+                    allAdviceData = JSON.parse(adviceJsonDataEl.textContent || '{}');
+                    console.log("Advice data loaded:", Object.keys(allAdviceData).length > 0);
+                } catch (e) {
+                    console.error("Failed to parse advice JSON data:", e);
+                    allAdviceData = {}; // Use empty object on error
+                }
+            } else {
+                 console.error("Advice JSON data script tag not found!");
+            }
+
+
+            // Apply dynamic styling based on data attributes
+            applyDynamicStyling();
+            console.log("Dynamic styling applied");
+
+            // Set up threshold progress bars based on data attributes
+            setupThresholdProgressBars();
+            console.log("Threshold bars setup");
+
+            // Initialize timeline chart using data from script tag
+            initializeTimelineChart();
+            console.log("Timeline chart initialized");
+
+            // Initialize persistence chart using data scraped from table
+            initializePersistenceChart();
+            console.log("Persistence chart initialized");
+
+            // --- NEW: Setup Advice Dropdown Listeners and Initial Display ---
+            setupAdviceListeners();
+            updateAdviceDisplay('fight'); // Initial display for fight tab
+            updateAdviceDisplay('flight'); // Initial display for flight tab
+            console.log("Advice listeners and initial display setup complete.");
+
+
+        } catch (error) {
+             console.error("Error during dashboard initialization:", error);
+        }
     });
-    
-    // Apply dynamic CSS based on status
+
+    // --- Functions from previous steps (applyDynamicStyling, setupThresholdProgressBars, initializeTimelineChart, initializePersistenceChart) ---
+    // (Keep these functions as they were in dashboard_html_fix_json_embed)
+    // ... (previous JS functions here) ...
+     // Apply dynamic CSS based on status
     function applyDynamicStyling() {
-        // Get status from data element
         const dataElement = document.getElementById('dashboard-data');
-        const status = dataElement.getAttribute('data-status');
-        
-        // Setup main status indicator
+        if (!dataElement) { console.error("Dashboard data element not found"); return; }
+        const status = dataElement.getAttribute('data-status') || 'green';
+
         const headerElement = document.getElementById('status-header');
         const statusIndicator = document.getElementById('main-status-indicator');
         const statusText = document.getElementById('status-text');
-        
+
         if (headerElement && statusIndicator && statusText) {
-            headerElement.classList.add('bg-' + status);
-            statusIndicator.classList.add('bg-' + status);
-            statusText.classList.add('text-' + status);
-        }
-        
-        // Setup category indicators
-        document.querySelectorAll('.category-row').forEach(row => {
-            const severity = row.getAttribute('data-severity');
-            if (severity) {
-                const indicator = row.querySelector('.status-indicator');
-                if (indicator) {
-                    indicator.classList.add('bg-' + severity);
-                }
-            }
+             const classesToRemove = ['bg-green', 'bg-yellow', 'bg-orange', 'bg-red', 'text-green', 'text-yellow', 'text-orange', 'text-red'];
+             headerElement.classList.remove(...classesToRemove.filter(c => c.startsWith('bg-')));
+             statusIndicator.classList.remove(...classesToRemove.filter(c => c.startsWith('bg-')));
+             statusText.classList.remove(...classesToRemove.filter(c => c.startsWith('text-')));
+             headerElement.classList.add('bg-' + status);
+             statusIndicator.classList.add('bg-' + status);
+             statusText.classList.add('text-' + status);
+        } else { console.warn("Main status elements not found"); }
+
+        document.querySelectorAll('.category-row .status-indicator').forEach(indicator => {
+            const severity = indicator.closest('.category-row')?.getAttribute('data-severity') || 'green';
+            indicator.classList.remove('bg-green', 'bg-yellow', 'bg-orange', 'bg-red');
+            indicator.classList.add('bg-' + severity);
+            indicator.setAttribute('title', severity.charAt(0).toUpperCase() + severity.slice(1));
         });
-        
-        // Setup event indicators
-        document.querySelectorAll('.event-item').forEach(item => {
-            const severity = item.getAttribute('data-severity');
-            if (severity) {
-                const indicator = item.querySelector('.status-indicator');
-                if (indicator) {
-                    indicator.classList.add('bg-' + severity);
-                }
-            }
+
+        document.querySelectorAll('.event-item .status-indicator').forEach(indicator => {
+            const severity = indicator.closest('.event-item')?.getAttribute('data-severity') || 'green';
+            indicator.classList.remove('bg-green', 'bg-yellow', 'bg-orange', 'bg-red');
+            indicator.classList.add('bg-' + severity);
+             indicator.setAttribute('title', severity.charAt(0).toUpperCase() + severity.slice(1));
         });
+         console.log("Dynamic styling function finished.");
     }
-    
+
     // Set up threshold progress bars
     function setupThresholdProgressBars() {
-        // Get data from hidden element
         const dataElement = document.getElementById('dashboard-data');
-        
-        // Orange threshold
-        const orangeCount = parseInt(dataElement.getAttribute('data-orange-count'));
-        const orangeThreshold = parseInt(dataElement.getAttribute('data-orange-threshold'));
+         if (!dataElement) { console.error("Dashboard data element not found for thresholds."); return; }
+
+        const orangeCount = parseInt(dataElement.getAttribute('data-orange-count') || '0');
+        const orangeThreshold = parseInt(dataElement.getAttribute('data-orange-threshold') || '3');
         const orangeCrossed = dataElement.getAttribute('data-orange-crossed') === 'true';
         const orangeProgress = document.getElementById('orange-progress');
         const orangeMessage = document.getElementById('orange-threshold-message');
-        
+
         if (orangeProgress && orangeMessage) {
-            const orangePercent = orangeThreshold > 0 ? (orangeCount / orangeThreshold * 100) : 0;
+            const orangePercent = orangeThreshold > 0 ? Math.min(100, (orangeCount / orangeThreshold * 100)) : 0;
             orangeProgress.style.width = orangePercent + '%';
             orangeProgress.setAttribute('aria-valuenow', orangeCount);
-            orangeProgress.textContent = orangeCount + '/' + orangeThreshold;
-            
-            if (orangeCrossed) {
-                orangeMessage.innerHTML = '<span class="text-danger">Threshold crossed</span>';
-            } else {
-                orangeMessage.textContent = (orangeThreshold - orangeCount) + ' more needed to cross threshold';
-            }
-        }
-        
-        // Red threshold
-        const redCount = parseInt(dataElement.getAttribute('data-red-count'));
-        const redThreshold = parseInt(dataElement.getAttribute('data-red-threshold'));
+            orangeProgress.textContent = `${orangeCount}/${orangeThreshold}`;
+            if (orangeCrossed) { orangeMessage.innerHTML = '<strong class="text-orange">Threshold crossed</strong>'; }
+            else { orangeMessage.textContent = `${Math.max(0, orangeThreshold - orangeCount)} more needed to cross threshold`; }
+        } else { console.warn("Orange threshold elements not found"); }
+
+        const redCount = parseInt(dataElement.getAttribute('data-red-count') || '0');
+        const redThreshold = parseInt(dataElement.getAttribute('data-red-threshold') || '1');
         const redCrossed = dataElement.getAttribute('data-red-crossed') === 'true';
         const redProgress = document.getElementById('red-progress');
         const redMessage = document.getElementById('red-threshold-message');
-        
+
         if (redProgress && redMessage) {
-            const redPercent = redThreshold > 0 ? (redCount / redThreshold * 100) : 0;
+            const redPercent = redThreshold > 0 ? Math.min(100, (redCount / redThreshold * 100)) : 0;
             redProgress.style.width = redPercent + '%';
             redProgress.setAttribute('aria-valuenow', redCount);
-            redProgress.textContent = redCount + '/' + redThreshold;
-            
-            if (redCrossed) {
-                redMessage.innerHTML = '<span class="text-danger">Threshold crossed</span>';
-            } else {
-                redMessage.textContent = (redThreshold - redCount) + ' more needed to cross threshold';
-            }
-        }
+            redProgress.textContent = `${redCount}/${redThreshold}`;
+            if (redCrossed) { redMessage.innerHTML = '<strong class="text-danger">Threshold crossed</strong>'; }
+            else { redMessage.textContent = `${Math.max(0, redThreshold - redCount)} more needed to cross threshold`; }
+        } else { console.warn("Red threshold elements not found"); }
+         console.log("Threshold progress bars function finished.");
     }
-    
+
     // Initialize timeline chart
     function initializeTimelineChart() {
-        // Get chart data from hidden element
-        const timelineDataEl = document.getElementById('timelineData');
-        const timelineData = JSON.parse(timelineDataEl.getAttribute('data-timeline'));
-        
-        // Initialize chart
-        const ctx = document.getElementById('eventTimeline').getContext('2d');
-        const eventTimeline = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: timelineData.dates,
-                datasets: [
-                    {
-                        label: 'Red Events',
-                        data: timelineData.red,
-                        borderColor: '#dc3545',
-                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                        fill: true,
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Orange Events',
-                        data: timelineData.orange,
-                        borderColor: '#fd7e14',
-                        backgroundColor: 'rgba(253, 126, 20, 0.1)',
-                        fill: true,
-                        tension: 0.1
-                    },
-                    {
-                        label: 'Yellow Events',
-                        data: timelineData.yellow,
-                        borderColor: '#ffc107',
-                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                        fill: true,
-                        tension: 0.1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Event Count'
-                        }
-                    },
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Date'
-                        }
-                    }
-                },
-                plugins: {
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false
-                    },
-                    legend: {
-                        position: 'top'
-                    }
-                }
-            }
-        });
-    }
-    
-    // Add persistence chart
-    function updateChartWithPersistence() {
-        // Get data from category rows
-        const categories = [];
-        const durations = [];
-        const confirmed = [];
-        
-        document.querySelectorAll('.category-row').forEach(row => {
-            const category = row.querySelector('td:first-child').textContent;
-            const severity = row.getAttribute('data-severity');
-            const durationText = row.querySelector('td:nth-child(4)').textContent.trim();
-            const isConfirmed = row.querySelector('td:nth-child(5) i.fa-check') !== null;
-            
-            if (severity !== 'green') {
-                categories.push(category);
-                durations.push(parseInt(durationText) || 0);
-                confirmed.push(isConfirmed);
-            }
-        });
-        
-        // Add persistence chart if we have data
-        if (categories.length > 0) {
-            const persCtx = document.getElementById('persistenceChart').getContext('2d');
-            new Chart(persCtx, {
-                type: 'bar',
-                data: {
-                    labels: categories,
-                    datasets: [{
-                        label: 'Days at Current Level',
-                        data: durations,
-                        backgroundColor: durations.map((d, i) => confirmed[i] ? 'rgba(40, 167, 69, 0.7)' : 'rgba(255, 193, 7, 0.7)'),
-                        borderColor: durations.map((d, i) => confirmed[i] ? 'rgb(40, 167, 69)' : 'rgb(255, 193, 7)'),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Days'
-                            }
-                        }
-                    },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                footer: function(tooltipItems) {
-                                    const idx = tooltipItems[0].dataIndex;
-                                    return confirmed[idx] ? 'Confirmed' : 'Not yet confirmed';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
+        const timelineJsonDataEl = document.getElementById('timelineJsonData');
+        const ctx = document.getElementById('eventTimeline');
+        if (!ctx) { console.warn("Timeline chart canvas not found."); return; }
+        if (!timelineJsonDataEl) { console.warn("Timeline JSON data script tag not found."); return; }
+
+        let timelineData;
+        try {
+             const timelineJsonStr = timelineJsonDataEl.textContent || '{}';
+             timelineData = JSON.parse(timelineJsonStr);
+        } catch (e) { console.error("Failed to parse timeline JSON data:", e); timelineData = {}; }
+
+        const chartArea = ctx.parentNode;
+        const existingMsg = chartArea.querySelector('.no-data-message');
+        if (existingMsg) existingMsg.remove();
+
+        if (!timelineData.dates || timelineData.dates.length === 0) {
+            console.warn("No dates found in timeline data. Skipping timeline chart.");
+             if(chartArea && !chartArea.querySelector('.no-data-message')) {
+                 const msg = document.createElement('p');
+                 msg.textContent = "No event data found for the timeline period.";
+                 msg.className = "text-center text-muted mt-3 no-data-message";
+                 chartArea.appendChild(msg);
+             }
+            return;
         }
+
+        const numDates = timelineData.dates.length;
+        const yellowData = (Array.isArray(timelineData.yellow) ? timelineData.yellow : []).slice(0, numDates);
+        const orangeData = (Array.isArray(timelineData.orange) ? timelineData.orange : []).slice(0, numDates);
+        const redData = (Array.isArray(timelineData.red) ? timelineData.red : []).slice(0, numDates);
+        while (yellowData.length < numDates) yellowData.push(0);
+        while (orangeData.length < numDates) orangeData.push(0);
+        while (redData.length < numDates) redData.push(0);
+
+        console.log("Initializing Timeline Chart with Data:", { dates: timelineData.dates, yellow: yellowData, orange: orangeData, red: redData });
+
+        try {
+             let existingChart = Chart.getChart(ctx);
+             if (existingChart) { console.log("Destroying existing timeline chart instance."); existingChart.destroy(); }
+
+            new Chart(ctx.getContext('2d'), {
+                type: 'bar',
+                data: { labels: timelineData.dates, datasets: [ { label: 'Yellow Events', data: yellowData, backgroundColor: 'rgba(255, 193, 7, 0.7)' }, { label: 'Orange Events', data: orangeData, backgroundColor: 'rgba(253, 126, 20, 0.7)' }, { label: 'Red Events', data: redData, backgroundColor: 'rgba(220, 53, 69, 0.7)' } ] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, stacked: true, title: { display: true, text: 'Event Count' } }, x: { stacked: true, title: { display: true, text: 'Date' } } }, plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top' } } }
+            });
+            console.log("Timeline chart initialized successfully.");
+        } catch (chartError) { console.error("Error initializing Chart.js for timeline:", chartError); }
     }
+
+    // Initialize persistence chart
+    function initializePersistenceChart() {
+        const persCtx = document.getElementById('persistenceChart');
+        const placeholder = document.getElementById('persistenceChartPlaceholder');
+        if (!persCtx || !placeholder) { console.warn("Persistence chart canvas or placeholder not found."); return; }
+
+        const categories = []; const durations = []; const confirmed = [];
+        const backgroundColors = []; const borderColors = [];
+        const confirmedBg = 'rgba(40, 167, 69, 0.7)'; const pendingBg = 'rgba(255, 193, 7, 0.7)';
+        const confirmedBorder = 'rgb(40, 167, 69)'; const pendingBorder = 'rgb(255, 193, 7)';
+
+        document.querySelectorAll('.category-row').forEach(row => {
+            const category = row.querySelector('td:nth-child(1)')?.textContent;
+            const severity = row.getAttribute('data-severity');
+            const durationCell = row.querySelector('td:nth-child(3)');
+            const confirmedCell = row.querySelector('td:nth-child(4)');
+            if (category && severity && severity !== 'green' && durationCell && confirmedCell) {
+                 const durationText = durationCell.textContent.trim();
+                 const isConfirmed = confirmedCell.querySelector('i.fa-check') !== null;
+                 categories.push(category.trim());
+                 durations.push(parseInt(durationText) || 0);
+                 confirmed.push(isConfirmed);
+                 backgroundColors.push(isConfirmed ? confirmedBg : pendingBg);
+                 borderColors.push(isConfirmed ? confirmedBorder : pendingBorder);
+            }
+        });
+        console.log("Initializing Persistence Chart with Data:", { categories, durations, confirmed });
+
+        const chartArea = persCtx.parentNode;
+        const existingMsg = chartArea.querySelector('.no-data-message');
+        if (existingMsg) existingMsg.remove();
+
+        let existingChart = Chart.getChart(persCtx);
+        if (existingChart) { console.log("Destroying existing persistence chart instance."); existingChart.destroy(); }
+
+        if (categories.length > 0) {
+             placeholder.style.display = 'none'; persCtx.style.display = 'block';
+            try {
+                new Chart(persCtx.getContext('2d'), {
+                    type: 'bar',
+                    data: { labels: categories, datasets: [{ label: 'Days at Current Level', data: durations, backgroundColor: backgroundColors, borderColor: borderColors, borderWidth: 1 }] },
+                    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { beginAtZero: true, title: { display: true, text: 'Days' } }, y: { ticks: { autoSkip: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.x !== null) { label += context.parsed.x + ' days'; } return label; }, footer: function(tooltipItems) { const idx = tooltipItems[0].dataIndex; return confirmed[idx] ? 'Status: Confirmed' : 'Status: Pending Confirmation'; } } } } }
+                });
+                 console.log("Persistence chart initialized successfully.");
+            } catch (chartError) {
+                console.error("Error initializing Chart.js for persistence:", chartError);
+                persCtx.style.display = 'none'; placeholder.textContent = 'Error loading persistence chart.'; placeholder.style.display = 'block';
+            }
+        } else {
+             console.log("No non-green categories found for persistence chart.");
+             persCtx.style.display = 'none'; placeholder.style.display = 'block';
+        }
+         console.log("Persistence chart function finished.");
+    }
+
+
+    // --- NEW FUNCTIONS FOR ADVICE TABS ---
+
+    // Setup event listeners for advice dropdowns
+    function setupAdviceListeners() {
+        const fightPersona = document.getElementById('fight-persona-select');
+        const fightResource = document.getElementById('fight-resource-select');
+        const flightPersona = document.getElementById('flight-persona-select');
+        const flightResource = document.getElementById('flight-resource-select');
+
+        if (fightPersona && fightResource) {
+            fightPersona.addEventListener('change', () => updateAdviceDisplay('fight'));
+            fightResource.addEventListener('change', () => updateAdviceDisplay('fight'));
+        } else {
+             console.error("Fight advice selectors not found!");
+        }
+
+        if (flightPersona && flightResource) {
+            flightPersona.addEventListener('change', () => updateAdviceDisplay('flight'));
+            flightResource.addEventListener('change', () => updateAdviceDisplay('flight'));
+        } else {
+             console.error("Flight advice selectors not found!");
+        }
+         console.log("Advice listeners setup.");
+    }
+
+    // Update the advice display based on selections
+    function updateAdviceDisplay(tabType) { // tabType is 'fight' or 'flight'
+        console.log(`Updating advice display for tab: ${tabType}`);
+
+        const personaSelect = document.getElementById(`${tabType}-persona-select`);
+        const resourceSelect = document.getElementById(`${tabType}-resource-select`);
+        const displayElement = document.getElementById(`${tabType}-advice-display`);
+
+        if (!personaSelect || !resourceSelect || !displayElement) {
+            console.error(`Required elements for ${tabType} advice tab not found.`);
+            return;
+        }
+
+        const selectedPersona = personaSelect.value; // 'individual', 'family', 'business'
+        const selectedResource = resourceSelect.value; // 'limited', 'moderate', 'substantial'
+
+        console.log(`Selected: Level=${currentAlertLevel}, Tab=${tabType}, Persona=${selectedPersona}, Resource=${selectedResource}`);
+
+        // Find the advice list in the nested structure
+        let adviceList = [];
+        try {
+            // Navigate through the data structure safely
+            const levelData = allAdviceData[currentAlertLevel] || {};
+            const typeData = levelData[tabType] || {};
+            const personaData = typeData[selectedPersona] || {};
+            adviceList = personaData[selectedResource] || [`No specific advice found for Level ${currentAlertLevel} / ${tabType} / ${selectedPersona} / ${selectedResource}.`];
+        } catch (e) {
+            console.error("Error accessing advice data structure:", e);
+            adviceList = ["Error retrieving advice."];
+        }
+
+         // Ensure adviceList is always an array
+        if (!Array.isArray(adviceList)) {
+            console.warn("Retrieved advice is not an array, using default message.");
+            adviceList = ["Advice data format error."];
+        }
+
+
+        // Generate HTML list items
+        let adviceHtml = adviceList.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+
+        // Update the display area
+        displayElement.innerHTML = adviceHtml || '<li>No advice available for this selection.</li>'; // Provide default if empty
+         console.log(`Updated ${tabType} advice display.`);
+    }
+
+    // Helper function to escape HTML (basic version)
+    function escapeHtml(unsafe) {
+        if (!unsafe || typeof unsafe !== 'string') return '';
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+    }
+
+
 </script>
 {% endblock %}

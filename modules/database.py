@@ -7,10 +7,20 @@ db = None
 def connect():
     """Connect to MongoDB database"""
     global client, db
-    client = pymongo.MongoClient(MONGODB_URI)
-    db = client[DATABASE_NAME]
-    return db
-
+    
+    # Extract the tlsCAFile parameter if it exists in the URI
+    uri = MONGODB_URI
+    
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client[DATABASE_NAME]
+        # Test the connection
+        client.admin.command('ping')
+        return db
+    except Exception as e:
+        print(f"Connection error: {e}")
+        raise
+    
 def get_db():
     """Get database connection"""
     global db
